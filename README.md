@@ -4,65 +4,169 @@
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cylaro/hwid-relay)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Use many devices with a single HWID on panels with a device limit (Remnawave and compatible).**
+**Connect as many devices as you want to a panel with a HWID device limit — they all count as one device.**
 
-A self-hosted Cloudflare Worker relay. Your apps subscribe to the worker; the worker fetches the real subscription with one fixed device identity (`x-hwid`, `User-Agent`, `x-device-os`, `x-ver-os`, `x-device-model`). The panel sees exactly **one device**, no matter how many phones, PCs or TVs you connect.
+A self-hosted relay on Cloudflare Workers (free plan). Your apps subscribe to the relay; the relay downloads the real subscription with one fixed device identity. The panel sees a single device — no matter how many phones, PCs or TVs you connect. Works with stock apps: Happ, v2RayTun, Streisand, Karing, FlClashX, and anything else that loads a subscription by URL.
 
-Works with stock apps — Happ, v2RayTun, Streisand, Karing and anything else that loads a subscription by URL. No app modifications, no manual HWID fields.
+[Инструкция на русском](README.ru.md)
 
-[README на русском](README.ru.md)
+---
 
-## Why
+## How it works (30 seconds)
 
-Panels such as [Remnawave](https://docs.rw/features/hwid-device-limit) count unique `x-hwid` header values per user. Every app instance generates its own value, so ten phones become ten devices and hit the limit. The header is produced by the client, and stock apps do not let you change it — so change **where the apps connect** instead:
+Panels like [Remnawave](https://docs.rw/features/hwid-device-limit) count unique `x-hwid` header values per user. Every app generates its own value and cannot change it — so ten apps become ten devices.
+
+The relay changes where your apps connect:
 
 ```
 Phone 1 (Happ) ─┐
 Phone 2 (Happ) ─┤   https://your-worker.workers.dev/<secret>/s/<token>
-Phone N      ─┘            │
-                           ▼  fixed identity: one x-hwid, one User-Agent
-                  Cloudflare Worker (yours)
-                           │
-                           ▼
+Phone 10     ─┘              │
+                             ▼   fixed identity: ONE x-hwid, ONE User-Agent
+                    Your Cloudflare Worker
+                             │
+                             ▼
                   Panel  ──>  sees exactly ONE device
 ```
 
-## Setup (5 minutes, free)
+---
 
-1. **Deploy** — press the button above (or `npx wrangler deploy`), sign in to Cloudflare. The free plan is enough (100,000 requests/day).
-2. **Configure** — Worker → Settings → Variables and Secrets:
+## Step-by-step guide
 
-   | Variable | Example | Required |
-   |---|---|---|
-   | `PANEL_BASE` | `https://panel-provider.com/sub` | yes (https, no token) |
-   | `HWID` | `UE42LJXu4DbiCaBv` | yes (10–64 chars `A-Z a-z 0-9 = -`) |
-   | `USER_AGENT` | `Happ/1.16.0 (iOS 18.3; iPhone 14 Pro)` | yes |
-   | `SECRET_PREFIX` | `my-secret-1` | yes (8+ chars, random) |
-   | `DEVICE_OS` / `VER_OS` / `DEVICE_MODEL` | `iOS` / `18.3` / `iPhone 14 Pro` | optional |
+### Before you start
 
-3. **Verify** — open `https://your-worker.workers.dev/<SECRET_PREFIX>/health` → `{"status":"ok"}`.
-4. **Connect devices** — add `https://your-worker.workers.dev/<SECRET_PREFIX>/s/<your-subscription-token>` in each app. Every device now counts as one.
+You need:
 
-Before deploying, you can verify the identity against your panel with the [happ-decryptor](https://github.com/cylaro/happ-decryptor) Request tab: send the panel URL with the same headers and check that content arrives and `x-hwid-max-devices-reached` is not set.
+1. **Your current subscription link** — the panel URL with your personal token, for example:
+   `https://panel-provider.com/sub/6f9a2b1c-4e7d-4c1a-9b2e-8f5d3a7c1e2f`
+   If you only have an encrypted `happ://crypt5/...` link, decrypt it first with [happ-decryptor](https://github.com/cylaro/happ-decryptor).
+2. **A free Cloudflare account** — [dash.cloudflare.com](https://dash.cloudflare.com) → Sign up. No card required.
+3. **5 minutes.**
 
-## How it works
+### Step 1 — Deploy the worker
 
-The worker is a dumb, safe pipe: it accepts only `GET /<secret>/s/<token>`, replaces the identity headers with your fixed values, and forwards the response from the single configured `PANEL_BASE`. It cannot be tricked into fetching arbitrary URLs (no client-controlled upstream), drops cookies and internal headers from the response, and forwards only what apps need: content type, `subscription-userinfo` (traffic quota), profile metadata and the `x-hwid-*` feedback headers.
+1. Press the **Deploy to Cloudflare** button above (or create a Worker manually: dash.cloudflare.com → **Workers & Pages** → **Create** → **Create Worker**).
+2. Name it, for example `hwid-relay`, and finish the deployment.
 
-The subscription token stays in the app link; the panel endpoint address never leaves your worker configuration.
+You now have a worker at `https://hwid-relay.<your-subdomain>.workers.dev`.
+
+### Step 2 — Understand your subscription link
+
+Split your link into two parts:
+
+```
+https://panel-provider.com/sub/6f9a2b1c-4e7d-4c1a-9b2e-8f5d3a7c1e2f
+└────────── PANEL_BASE ──────────┘ └──────────── TOKEN ────────────┘
+```
+
+You will paste `PANEL_BASE` into the worker and `TOKEN` into every device link later.
+
+### Step 3 — Choose the device identity
+
+These values are what the panel will see as "the device":
+
+| Field | Rule | Example |
+|---|---|---|
+| `HWID` | 10–64 chars: `A-Z a-z 0-9 = -` | `UE42LJXu4DbiCaBv` |
+| `USER_AGENT` | any string, ideally matching a real client | `Happ/1.16.0 (iOS 18.3; iPhone 14 Pro)` |
+| `DEVICE_OS` | `iOS`, `Android`, `Windows`, `macOS`… | `iOS` |
+| `VER_OS` | OS version | `18.3` |
+| `DEVICE_MODEL` | device name | `iPhone 14 Pro` |
+
+You can generate a random valid HWID with the [happ-decryptor](https://github.com/cylaro/happ-decryptor) editor (`+ HWID` button). Once chosen, keep these values **the same forever** — the panel remembers the device by them.
+
+### Step 4 — Set the worker variables
+
+In the Cloudflare dashboard:
+
+1. **Workers & Pages** → `hwid-relay` → **Settings** → **Variables and Secrets**.
+2. Add each variable below with type **Text**, pressing **Deploy** at the end:
+
+| Name | Value |
+|---|---|
+| `PANEL_BASE` | `https://panel-provider.com/sub` |
+| `HWID` | `UE42LJXu4DbiCaBv` |
+| `USER_AGENT` | `Happ/1.16.0 (iOS 18.3; iPhone 14 Pro)` |
+| `SECRET_PREFIX` | a random word, e.g. `hX7kQ2mV` |
+| `DEVICE_OS` | `iOS` |
+| `VER_OS` | `18.3` |
+| `DEVICE_MODEL` | `iPhone 14 Pro` |
+
+Saving variables redeploys the worker automatically.
+
+### Step 5 — Health check
+
+Open:
+
+```
+https://hwid-relay.<your-subdomain>.workers.dev/hX7kQ2mV/health
+```
+
+Expected answer:
+
+```json
+{"status":"ok","hint":"subscription URL: <worker>/SECRET_PREFIX/s/<token>"}
+```
+
+If you get `{"status":"misconfigured",...}` — the response lists exactly which variables are missing or invalid.
+
+### Step 6 — Check that the panel accepts your identity
+
+Open in any browser:
+
+```
+https://hwid-relay.<your-subdomain>.workers.dev/hX7kQ2mV/s/6f9a2b1c-4e7d-4c1a-9b2e-8f5d3a7c1e2f
+```
+
+You should see the subscription content (a text list of `vless://...` lines, Base64, or similar). This proves the panel accepted your HWID — the relay always sends exactly these headers.
+
+Also check the panel user card (your provider's website or mini-app): the device list should now show **one device** with your `DEVICE_MODEL`.
+
+Alternative check: [happ-decryptor](https://github.com/cylaro/happ-decryptor) → Request tab → send the panel URL with the same values and inspect the response headers.
+
+### Step 7 — Connect your devices
+
+In each app (Happ, v2RayTun, ...): add a subscription by URL:
+
+```
+https://hwid-relay.<your-subdomain>.workers.dev/hX7kQ2mV/s/6f9a2b1c-4e7d-4c1a-9b2e-8f5d3a7c1e2f
+```
+
+That's it. Update the subscription on every device — the panel still shows one device. Traffic quota display works too (`subscription-userinfo` is forwarded).
+
+> **Do not share the relay link publicly** — anyone with it uses your traffic under your identity.
+
+### Maintenance
+
+| Event | Action |
+|---|---|
+| Provider issued a new token | Add the new device link with the new token |
+| Provider moved the panel | Update `PANEL_BASE`, devices untouched |
+| Want a different identity | Change `HWID`/`USER_AGENT`, then update the subscription on all devices |
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `/health` returns `{"status":"misconfigured","missing":[...]}` | A variable is missing or invalid | Fix the listed variable in Step 4 |
+| Subscription opens, but `x-hwid-max-devices-reached: true` in response headers | The limit is already used by earlier devices | Delete old devices in the panel user card, or ask the owner to raise the limit |
+| Panel returns 404 or empty body | Wrong `PANEL_BASE`/token, the provider blocks Cloudflare IPs, or the panel requires an identity you did not configure | Open the original panel URL in a browser; if it works there, re-check your variables; if the provider blocks datacenter IPs, a relay on Cloudflare cannot help |
+| `Not Found` from the worker | Wrong path or wrong `SECRET_PREFIX` | Use exactly `<worker>/<SECRET_PREFIX>/s/<token>` |
+| Apps show no traffic quota | Panel does not send `subscription-userinfo` | Panel-side; not a relay issue |
 
 ## Honest limitations
 
-- The panel sees one device whose requests come from Cloudflare IP ranges with a high request frequency. A provider can notice this in server logs; using it against your plan's terms is your decision.
-- If the provider blocks datacenter IPs, the relay will fail — this is the main non-guarantee, and it depends entirely on your provider.
-- If the provider changes the panel URL or your token, update `PANEL_BASE` or the device links.
-- One worker = one panel + one identity. Multi-panel setups need multiple deployments.
+- The panel sees one device whose requests come from Cloudflare IP ranges at a high frequency. A provider can notice this in server logs; using it against your plan's terms is your decision.
+- If the provider blocks datacenter IPs, this relay cannot help — no free public service can fix that.
+- One worker = one panel + one identity. Several panels → deploy the worker several times.
 
 ## Development
 
 ```bash
-npm test        # unit tests for routing, headers and response filtering
-npx wrangler dev  # run the worker locally
+npm test            # unit tests: routing, headers, response filtering
+npx wrangler dev    # run the worker locally
 ```
 
 ## License
