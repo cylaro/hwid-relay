@@ -1,0 +1,14 @@
+name = "hwid-relay"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+# Set these in the Cloudflare dashboard (Worker -> Settings -> Variables)
+# or with `npx wrangler secret put <NAME>`:
+#
+#   PANEL_BASE     https URL of the panel subscription endpoint, without the token
+#   HWID           10-64 chars: A-Z a-z 0-9 = -
+#   USER_AGENT     exact client User-Agent
+#   SECRET_PREFIX  secret path prefix, 8+ chars (A-Z a-z 0-9 _ -)
+#   DEVICE_OS      optional, e.g. "iOS"
+#   VER_OS         optional, e.g. "18.3"
+#   DEVICE_MODEL   optional, e.g. "iPhone 14 Pro"

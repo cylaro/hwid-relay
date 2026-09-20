@@ -1,0 +1,11 @@
+{
+  "name": "hwid-relay",
+  "version": "1.0.0",
+  "description": "Self-hosted Cloudflare Worker relay: many devices, one HWID at panels with device limits",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
