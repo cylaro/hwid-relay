@@ -173,6 +173,11 @@ npx wrangler dev    # run the worker locally
 
 This project is provided for **educational purposes** — it demonstrates how HWID device counting works. You are solely responsible for how you use it: comply with your provider's terms of service and applicable law. The author is not affiliated with Happ, Remnawave or any provider, does not encourage violating any agreement, and accepts no liability for consequences of use. The software comes with no warranty (see [MIT license](LICENSE)).
 
+## Related projects
+
+- [happ-decryptor](https://github.com/cylaro/happ-decryptor) — decrypt `happ://crypt…` links, edit subscription URLs, send requests with device headers.
+- [happ-relay-vercel](https://github.com/cylaro/happ-relay-vercel) — the same one-HWID relay on Vercel, with a serverless function instead of a Worker.
+
 ## License
 
 [MIT](LICENSE)
